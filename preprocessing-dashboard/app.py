@@ -90,10 +90,27 @@ if uploaded_file is not None:
     # =====================================
     # GOOGLE FORMS FLOW
     # =====================================
+   # =====================================
+    # GOOGLE FORMS FLOW
+    # =====================================
     else:
-        google_forms_processor(
-            uploaded_file,
-            selected_sheet
+        # 1. Baca file Excel menjadi DataFrame Pandas berdasarkan sheet yang dipilih
+        df_raw = pd.read_excel(uploaded_file, sheet_name=selected_sheet)
+        
+        # 2. Masukkan DataFrame ke fungsi pemroses dan tampung hasilnya
+        df_cleaned = google_forms_processor(df_raw)
+        
+        # 3. Tampilkan hasilnya di dashboard Streamlit
+        st.write("### Hasil Pre-processing Google Forms")
+        st.dataframe(df_cleaned)
+        
+        # (Opsional) Tambahkan tombol download jika Anda ingin mengunduh hasilnya
+        csv = df_cleaned.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Unduh Data Hasil Pembersihan (CSV)",
+            data=csv,
+            file_name=f"cleaned_{selected_sheet}.csv",
+            mime="text/csv",
         )
 
 else:
