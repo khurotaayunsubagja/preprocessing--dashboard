@@ -246,11 +246,11 @@ if uploaded_file is not None:
                 )
             else:
                 st.info("Pilih minimal 1 kolom di atas untuk mulai melakukan konfigurasi perhitungan.")
-  from processing.google_forms import (
-    google_forms_processor, 
-    calculate_column_metrics, 
-    generate_final_excel
-)
+      from processing.google_forms import (
+                google_forms_processor, 
+                calculate_column_metrics, 
+                generate_final_excel
+                )
 
 else:
     st.info("📥 Silakan unggah file kuesioner Excel (.xlsx) Anda terlebih dahulu untuk memulai.")
