@@ -13,7 +13,11 @@ st.set_page_config(
 
 # Import modul flow kuesioner Anda
 from processing.survey_monkey import run_survey_monkey_flow
-from processing.google_forms import google_forms_processor
+from processing.google_forms import (
+    google_forms_processor, 
+    calculate_column_metrics, 
+    generate_final_excel
+)
 
 # Header Aplikasi
 st.title("Dashboard Pengolahan Data Excel")
@@ -207,7 +211,7 @@ if uploaded_file is not None:
                     
                     calc_settings[col] = {"type": col_type, "routing": routing, "metrics": metrics}
                 
-                # --- LANGKAH 8: Preview Perhitungan (Memanggil Fungsi Baru di google_forms.py) ---
+                # --- LANGKAH 8: Preview Perhitungan ---
                 st.divider()
                 st.write("### 8. Preview Hasil Perhitungan Data")
                 
@@ -246,11 +250,6 @@ if uploaded_file is not None:
                 )
             else:
                 st.info("Pilih minimal 1 kolom di atas untuk mulai melakukan konfigurasi perhitungan.")
-      from processing.google_forms import (
-                google_forms_processor, 
-                calculate_column_metrics, 
-                generate_final_excel
-                )
 
 else:
     st.info("📥 Silakan unggah file kuesioner Excel (.xlsx) Anda terlebih dahulu untuk memulai.")
