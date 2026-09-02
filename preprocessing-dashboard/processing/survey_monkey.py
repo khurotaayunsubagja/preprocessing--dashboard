@@ -86,14 +86,16 @@ def run_survey_monkey_flow(uploaded_file, selected_sheet):
         
         df_preview_style = df_preview_style.sort_values(by=[flat_target_col])
 
-        def highlight_duplicate_groups(df_data):
+        def highlight_duplicate_groups(data):
             colors = ['#FFF2CC', '#D9EAD3', '#C9DAF8', '#F4CCCC', '#E1D5E7', '#FCE5CD', '#D5E8D4', '#E6F4EA']
-            group_ids = df_data.groupby(flat_target_col, sort=False).ngroup().tolist()
-            style_df = pd.DataFrame('', index=df_data.index, columns=df_data.columns)
+            unique_vals = data[flat_target_col].unique()
+            val_to_color = {val: colors[idx % len(colors)] for idx, val in enumerate(unique_vals)}
             
-            for i in range(len(df_data)):
-                row_color = colors[group_ids[i] % len(colors)]
-                style_df.iloc[i] = f'background-color: {row_color}; color: black;'
+            style_df = pd.DataFrame('', index=data.index, columns=data.columns)
+            for row_idx in data.index:
+                current_val = data.loc[row_idx, flat_target_col]
+                row_color = val_to_color.get(current_val, '')
+                style_df.loc[row_idx, :] = f'background-color: {row_color}; color: black;'
             return style_df
 
         st.dataframe(df_preview_style.style.apply(highlight_duplicate_groups, axis=None), use_container_width=True)
