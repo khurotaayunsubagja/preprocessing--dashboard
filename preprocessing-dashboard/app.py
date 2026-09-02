@@ -153,16 +153,10 @@ if uploaded_file is not None:
                     # Urutkan berdasarkan Index
                     df_all_dups = df_all_dups.sort_values(by=duplicate_keys)
                     
-                    # LOGIKA BARU: Styling warna menggunakan List Python Murni (Sangat Aman & Stabil)
+                    # LOGIKA BARU: Styling warna mengadopsi referensi dari Survey Monkey Anda
                     def highlight_groups(df_data):
-                        # Palet warna pastel (Format List biasa)
-                        colors = [
-                            'background-color: rgba(255, 243, 205, 0.8)',  # Kuning Pastel
-                            'background-color: rgba(212, 237, 218, 0.8)',  # Hijau Pastel
-                            'background-color: rgba(204, 229, 255, 0.8)',  # Biru Pastel
-                            'background-color: rgba(248, 215, 218, 0.8)',  # Merah Pastel
-                            'background-color: rgba(226, 227, 229, 0.8)'   # Abu-abu Pastel
-                        ]
+                        # Palet warna hex yang sama persis dengan Survey Monkey
+                        colors = ['#FFF2CC', '#D9EAD3', '#C9DAF8', '#F4CCCC', '#E1D5E7', '#FCE5CD', '#D5E8D4', '#E6F4EA']
                         
                         # Dapatkan ID grup, lalu ubah langsung menjadi list angka biasa (menghindari error array Numpy)
                         group_ids = df_data.groupby(duplicate_keys, sort=False).ngroup().tolist()
@@ -174,7 +168,7 @@ if uploaded_file is not None:
                         # Cara ini tidak akan pernah error meskipun ada nomor baris yang kembar
                         for i in range(len(df_data)):
                             row_color = colors[group_ids[i] % len(colors)]
-                            style_df.iloc[i] = row_color
+                            style_df.iloc[i] = f'background-color: {row_color}; color: black;'
                             
                         return style_df
 
