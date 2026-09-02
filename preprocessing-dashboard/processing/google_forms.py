@@ -8,6 +8,16 @@ def google_forms_processor(df_raw):
     # Jalankan pembersihan teks spasi pada nama kolom asli
     df_cleaned.columns = [str(col).strip() for col in df_cleaned.columns]
     
+    # --- TAHAP BARU: DETEKSI & HANDLING DUPLIKAT ---
+    # Kita abaikan kolom 'timestamp' saat mengecek duplikat karena waktunya pasti berbeda
+    cols_to_check = [col for col in df_cleaned.columns if "timestamp" not in col.lower()]
+    
+    # Gunakan keep=False agar SEMUA baris yang kembar muncul (bukan cuma kembarannya saja)
+    df_duplicates = df_cleaned[df_cleaned.duplicated(subset=cols_to_check, keep=False)].copy()
+    
+    # Hapus duplikat dari data yang akan diproses (simpan data pertama saja)
+    df_cleaned = df_cleaned.drop_duplicates(subset=cols_to_check, keep='first').copy()
+    
     # --- TAHAP 1: DETEKSI & PARSING OTOMATIS MULTIPLE ANSWERS (MA) ---
     columns_to_process = list(df_cleaned.columns)
     
@@ -43,7 +53,8 @@ def google_forms_processor(df_raw):
                 # Hapus kolom utama aslinya setelah dipecah
                 df_cleaned.drop(columns=[col], inplace=True)
                 
-    return df_cleaned
+    # Return 2 dataframe: data yang sudah bersih & data duplikatnya
+    return df_cleaned, df_duplicates
 
 
 def calculate_column_metrics(df, col, settings):
@@ -88,22 +99,26 @@ def calculate_column_metrics(df, col, settings):
     return df_final, {"type": "Categorical", "average": avg_val}
 
 
-def generate_final_excel(df_raw, df_processed, calc_settings):
+def generate_final_excel(df_raw, df_processed, df_duplicates, calc_settings):
     """
     Membuat file Excel dalam bentuk memory buffer yang berisi:
     1. Raw Data Awal
     2. Data Hasil Preprocessing
-    3. Hasil Perhitungan Analisis
+    3. Data Duplikat (Baru)
+    4. Hasil Perhitungan Analisis
     """
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
         # Sheet 1: Raw Data Awal
         df_raw.to_excel(writer, sheet_name='1_Raw_Data_Awal', index=False)
         
-        # Sheet 2: Data Hasil Preprocessing
+        # Sheet 2: Data Hasil Preprocessing (Sudah bersih dari duplikat)
         df_processed.to_excel(writer, sheet_name='2_Data_Preprocessed', index=False)
         
-        # Sheet 3: Perhitungan Data
+        # Sheet 3: Data Duplikat (Memperlihatkan SEMUA entri yang kembar)
+        df_duplicates.to_excel(writer, sheet_name='3_Data_Duplikat', index=False)
+        
+        # Sheet 4: Perhitungan Data
         summary_rows = []
         for col, settings in calc_settings.items():
             summary_rows.append({
@@ -112,7 +127,8 @@ def generate_final_excel(df_raw, df_processed, calc_settings):
                 "Base Routing": settings['routing'],
                 "Matriks di-input": ", ".join(settings['metrics'])
             })
-        df_summary = pd.DataFrame(summary_rows)
-        df_summary.to_excel(writer, sheet_name='3_Perhitungan_Data', index=False)
+        if summary_rows: # Mencegah error jika calc_settings kosong
+            df_summary = pd.DataFrame(summary_rows)
+            df_summary.to_excel(writer, sheet_name='4_Perhitungan_Data', index=False)
         
     return buffer.getvalue()
