@@ -136,36 +136,36 @@ if uploaded_file is not None:
         if dup_count > 0:
             st.warning(f"Terdeteksi **{dup_count}** baris data duplikat (ekstra) berdasarkan kolom pilihan Anda.")
                 
-                # --- TAHAPAN BARU: TAMPILKAN SEMUA DATA DUPLIKAT ---
-                st.write("👀 **Preview Data Duplikat (Menampilkan seluruh entri yang kembar):**")
+            # --- TAHAPAN BARU: TAMPILKAN SEMUA DATA DUPLIKAT ---
+            st.write("👀 **Preview Data Duplikat (Menampilkan seluruh entri yang kembar):**")
                 
-                # Ambil semua data duplikat (keep=False untuk mengambil original & duplicate)
-                df_all_dups = df_working[df_working.duplicated(subset=duplicate_keys, keep=False)]
+            # Ambil semua data duplikat (keep=False untuk mengambil original & duplicate)
+            df_all_dups = df_working[df_working.duplicated(subset=duplicate_keys, keep=False)]
                 
-                # Urutkan berdasarkan kolom unik agar data kembar tampil berurutan / bersebelahan
-                df_all_dups = df_all_dups.sort_values(by=duplicate_keys)
+            # Urutkan berdasarkan kolom unik agar data kembar tampil berurutan / bersebelahan
+            df_all_dups = df_all_dups.sort_values(by=duplicate_keys)
                 
-                # Tampilkan dataframe di UI Streamlit
-                st.dataframe(df_all_dups, use_container_width=True)
-                # ----------------------------------------------------
+            # Tampilkan dataframe di UI Streamlit
+            st.dataframe(df_all_dups, use_container_width=True)
+            # ----------------------------------------------------
                 
-                col_dup1, col_dup2 = st.columns([2, 1])
-                with col_dup1:
-                    keep_option = st.selectbox(
-                        "Tentukan baris yang ingin dipertahankan:",
-                        options=["Pertahankan baris pertama (First)", "Pertahankan baris terakhir (Last)"],
-                        key="gf_dup_keep"
+            col_dup1, col_dup2 = st.columns([2, 1])
+            with col_dup1:
+                keep_option = st.selectbox(
+                    "Tentukan baris yang ingin dipertahankan:",
+                    options=["Pertahankan baris pertama (First)", "Pertahankan baris terakhir (Last)"],
+                    key="gf_dup_keep"
                     )
-                with col_dup2:
-                    st.write("")
-                    st.write("")
-                    if st.button("🔥 Hapus Data Duplikat", type="primary", use_container_width=True, key="btn_drop_dup"):
-                        keep_val = 'first' if "pertama" in keep_option.lower() else 'last'
-                        # Hapus data dan simpan ke dataframe
-                        df_working = df_working.drop_duplicates(subset=duplicate_keys, keep=keep_val)
-                        st.session_state['gf_processed_df'] = df_working
-                        st.success(f"Berhasil! Sisa data saat ini: {len(df_working)} baris.")
-                        st.rerun()
+            with col_dup2:
+                st.write("")
+                st.write("")
+                if st.button("🔥 Hapus Data Duplikat", type="primary", use_container_width=True, key="btn_drop_dup"):
+                    keep_val = 'first' if "pertama" in keep_option.lower() else 'last'
+                    # Hapus data dan simpan ke dataframe
+                    df_working = df_working.drop_duplicates(subset=duplicate_keys, keep=keep_val)
+                    st.session_state['gf_processed_df'] = df_working
+                    st.success(f"Berhasil! Sisa data saat ini: {len(df_working)} baris.")
+                    st.rerun()
                 else:
                     st.success("Data aman! Tidak ditemukan baris duplikat pada kombinasi kolom ini.")
             else:
