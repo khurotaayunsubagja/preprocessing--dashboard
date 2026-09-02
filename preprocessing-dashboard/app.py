@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import numpy as np  # <-- Ditambahkan untuk mengatasi error styling warna
 import os
 import sys
 
@@ -131,11 +132,8 @@ if uploaded_file is not None:
             
             if duplicate_keys:
                 # 1. Mencegah data kosong (None, NaN, spasi kosong) terhitung duplikat
-                # Konversi jadi string sementara untuk mengecek segala bentuk kekosongan
                 temp_keys_df = df_working[duplicate_keys].astype(str)
                 is_empty = temp_keys_df.apply(lambda col: col.str.strip().isin(['', 'nan', 'None', 'null', '<NA>'])).any(axis=1)
-                
-                # Buat mask untuk data yang VALID (ada isinya)
                 valid_mask = ~is_empty
                 
                 # 2. Hitung jumlah duplikat (hanya pada baris ekstra) khusus untuk data yang valid
@@ -152,35 +150,30 @@ if uploaded_file is not None:
                     all_dups_mask = df_working.duplicated(subset=duplicate_keys, keep=False)
                     df_all_dups = df_working[all_dups_mask & valid_mask]
                         
-                    # Urutkan berdasarkan Index agar berurutan sesuai nomor baris asli (6, 28, 39, dst)
+                    # Urutkan berdasarkan Index
                     df_all_dups = df_all_dups.sort_index()
                     
-                    # Logika warna menggunakan Pandas Styler
-                    # ngroup() memberikan ID grup numerik untuk kombinasi kunci yang sama
-                    group_mapping = df_all_dups.groupby(duplicate_keys).ngroup()
-                    
+                    # LOGIKA BARU: Styling warna menggunakan NumPy Array murni (Bebas Error Loop)
                     def highlight_groups(df):
-                        # Palet warna transparan agar cocok dengan dark/light mode Streamlit
-                        colors = [
+                        colors = np.array([
                             'background-color: rgba(255, 99, 132, 0.25)',  # Merah
                             'background-color: rgba(54, 162, 235, 0.25)',  # Biru
                             'background-color: rgba(255, 206, 86, 0.25)',  # Kuning
                             'background-color: rgba(75, 192, 192, 0.25)',  # Hijau
                             'background-color: rgba(153, 102, 255, 0.25)', # Ungu
                             'background-color: rgba(255, 159, 64, 0.25)'   # Oranye
-                        ]
+                        ])
                         
-                        # Buat DataFrame kosong untuk menampung format style
-                        style_df = pd.DataFrame('', index=df.index, columns=df.columns)
+                        # Hitung ID grup menggunakan .values untuk menghindari error index berantakan
+                        group_ids = df.groupby(duplicate_keys).ngroup().values
                         
-                        # PERBAIKAN: Gunakan perulangan berbasis posisi (range/iloc) 
-                        # agar aman dan kebal dari error meskipun terdapat index kembar
-                        for i in range(len(df)):
-                            group_id = group_mapping.iloc[i]
-                            color = colors[group_id % len(colors)]
-                            style_df.iloc[i] = color
-                            
-                        return style_df
+                        # Map array warna secara otomatis per baris
+                        row_colors = colors[group_ids % len(colors)]
+                        
+                        # Bentuk menjadi matriks 2D sesuai jumlah kolom dan baris DataFrame
+                        style_matrix = np.tile(row_colors, (len(df.columns), 1)).T
+                        
+                        return pd.DataFrame(style_matrix, index=df.index, columns=df.columns)
 
                     # Aplikasikan style warna lalu tampilkan
                     styled_df = df_all_dups.style.apply(highlight_groups, axis=None)
