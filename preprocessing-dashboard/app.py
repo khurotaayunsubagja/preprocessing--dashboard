@@ -130,23 +130,60 @@ if uploaded_file is not None:
             )
             
             if duplicate_keys:
-                # Menghitung jumlah baris "ekstra" yang duplikat
-                dup_count = df_working.duplicated(subset=duplicate_keys).sum()
+                # 1. Mencegah data kosong (None, NaN, spasi kosong) terhitung duplikat
+                # Konversi jadi string sementara untuk mengecek segala bentuk kekosongan
+                temp_keys_df = df_working[duplicate_keys].astype(str)
+                is_empty = temp_keys_df.apply(lambda col: col.str.strip().isin(['', 'nan', 'None', 'null', '<NA>'])).any(axis=1)
+                
+                # Buat mask untuk data yang VALID (ada isinya)
+                valid_mask = ~is_empty
+                
+                # 2. Hitung jumlah duplikat (hanya pada baris ekstra) khusus untuk data yang valid
+                dup_mask_first = df_working.duplicated(subset=duplicate_keys, keep='first')
+                dup_count = (dup_mask_first & valid_mask).sum()
                 
                 if dup_count > 0:
-                    st.warning(f"Terdeteksi **{dup_count}** baris data duplikat (ekstra) berdasarkan kolom pilihan Anda.")
+                    st.warning(f"Terdeteksi **{dup_count}** baris data duplikat berdasarkan kolom pilihan Anda.")
                         
-                    # --- TAHAPAN BARU: TAMPILKAN SEMUA DATA DUPLIKAT ---
-                    st.write("👀 **Preview Data Duplikat (Menampilkan seluruh entri yang kembar):**")
+                    # --- TAHAPAN BARU: PREVIEW DATA URUT & HIGHLIGHT WARNA ---
+                    st.write("👀 **Preview Data Duplikat (Baris dengan warna sama = data kembar):**")
                         
-                    # Ambil semua data duplikat (keep=False untuk mengambil original & duplicate)
-                    df_all_dups = df_working[df_working.duplicated(subset=duplicate_keys, keep=False)]
+                    # Ambil semua data duplikat (keep=False) HANYA yang tidak kosong
+                    all_dups_mask = df_working.duplicated(subset=duplicate_keys, keep=False)
+                    df_all_dups = df_working[all_dups_mask & valid_mask]
                         
-                    # Urutkan berdasarkan kolom unik agar data kembar tampil berurutan / bersebelahan
-                    df_all_dups = df_all_dups.sort_values(by=duplicate_keys)
+                    # Urutkan berdasarkan Index agar berurutan sesuai nomor baris asli (6, 28, 39, dst)
+                    df_all_dups = df_all_dups.sort_index()
+                    
+                    # Logika warna menggunakan Pandas Styler
+                    # ngroup() memberikan ID grup numerik untuk kombinasi kunci yang sama
+                    group_mapping = df_all_dups.groupby(duplicate_keys).ngroup()
+                    
+                    def highlight_groups(df):
+                        # Palet warna transparan agar cocok dengan dark/light mode Streamlit
+                        colors = [
+                            'background-color: rgba(255, 99, 132, 0.25)',  # Merah
+                            'background-color: rgba(54, 162, 235, 0.25)',  # Biru
+                            'background-color: rgba(255, 206, 86, 0.25)',  # Kuning
+                            'background-color: rgba(75, 192, 192, 0.25)',  # Hijau
+                            'background-color: rgba(153, 102, 255, 0.25)', # Ungu
+                            'background-color: rgba(255, 159, 64, 0.25)'   # Oranye
+                        ]
                         
-                    # Tampilkan dataframe di UI Streamlit
-                    st.dataframe(df_all_dups, use_container_width=True)
+                        # Buat DataFrame kosong untuk menampung format style
+                        style_df = pd.DataFrame('', index=df.index, columns=df.columns)
+                        
+                        # Beri warna yang sama untuk setiap baris di kelompok duplikat yang sama
+                        for idx in df.index:
+                            group_id = group_mapping.loc[idx]
+                            color = colors[group_id % len(colors)]
+                            style_df.loc[idx] = color
+                            
+                        return style_df
+
+                    # Aplikasikan style warna lalu tampilkan
+                    styled_df = df_all_dups.style.apply(highlight_groups, axis=None)
+                    st.dataframe(styled_df, use_container_width=True)
                     # ----------------------------------------------------
                         
                     col_dup1, col_dup2 = st.columns([2, 1])
@@ -161,13 +198,22 @@ if uploaded_file is not None:
                         st.write("")
                         if st.button("🔥 Hapus Data Duplikat", type="primary", use_container_width=True, key="btn_drop_dup"):
                             keep_val = 'first' if "pertama" in keep_option.lower() else 'last'
-                            # Hapus data dan simpan ke dataframe
-                            df_working = df_working.drop_duplicates(subset=duplicate_keys, keep=keep_val)
+                            
+                            # Pisahkan data yang kosong agar tidak ikut terhapus
+                            df_empty = df_working[~valid_mask]
+                            df_valid = df_working[valid_mask]
+                            
+                            # Lakukan penghapusan duplikat HANYA pada data yang valid
+                            df_valid_dedup = df_valid.drop_duplicates(subset=duplicate_keys, keep=keep_val)
+                            
+                            # Gabungkan kembali data kosong dengan data valid yang sudah dibersihkan
+                            df_working = pd.concat([df_empty, df_valid_dedup]).sort_index()
+                            
                             st.session_state['gf_processed_df'] = df_working
                             st.success(f"Berhasil! Sisa data saat ini: {len(df_working)} baris.")
                             st.rerun()
                 else:
-                    st.success("Data aman! Tidak ditemukan baris duplikat pada kombinasi kolom ini.")
+                    st.success("Data aman! Tidak ditemukan baris duplikat (dengan isian) pada kombinasi kolom ini.")
             else:
                 st.caption("💡 *Pilih kolom kunci di atas untuk mendeteksi data duplikat secara langsung.*")
         
