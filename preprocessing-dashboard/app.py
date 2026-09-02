@@ -11,7 +11,7 @@ st.set_page_config(
 
 # Import modul flow kuesioner (Router Utama)
 from processing.survey_monkey import run_survey_monkey_flow(uploaded_file, selected_sheet)
-from processing.google_forms import run_google_forms_flow
+from processing.google_forms import run google_forms_processor(df_raw)
 
 # Header Aplikasi
 st.title("Dashboard Pengolahan Data Excel")
