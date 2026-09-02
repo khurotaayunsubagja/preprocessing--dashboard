@@ -173,11 +173,12 @@ if uploaded_file is not None:
                         # Buat DataFrame kosong untuk menampung format style
                         style_df = pd.DataFrame('', index=df.index, columns=df.columns)
                         
-                        # Beri warna yang sama untuk setiap baris di kelompok duplikat yang sama
-                        for idx in df.index:
-                            group_id = group_mapping.loc[idx]
+                        # PERBAIKAN: Gunakan perulangan berbasis posisi (range/iloc) 
+                        # agar aman dan kebal dari error meskipun terdapat index kembar
+                        for i in range(len(df)):
+                            group_id = group_mapping.iloc[i]
                             color = colors[group_id % len(colors)]
-                            style_df.loc[idx] = color
+                            style_df.iloc[i] = color
                             
                         return style_df
 
