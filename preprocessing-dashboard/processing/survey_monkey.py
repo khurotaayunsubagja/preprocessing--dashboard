@@ -11,10 +11,17 @@ def run_survey_monkey_flow(uploaded_file, selected_sheet):
     if 'sm_metadata' not in st.session_state:
         st.session_state['sm_metadata'] = {}
 
-    state_key = f"sm_init_loaded_{selected_sheet}"
+   state_key = f"sm_init_loaded_{selected_sheet}"
     if state_key not in st.session_state or st.sidebar.button("🔄 Reset Data Mentah", key="reset_sm_data"):
         # Header Multi-Index khusus Survey Monkey
-        df_init = pd.read_excel(uploaded_file, sheet_name=selected_sheet, header=[0, 1])
+        # Tambahkan dtype=str agar Pandas tidak otomatis menganggap nomor HP sebagai desimal
+        df_init = pd.read_excel(uploaded_file, sheet_name=selected_sheet, header=[0, 1], dtype=str)
+        
+        # --- TAMBAHAN PEMBERSIHAN FORMAT .0000 ---
+        # Bersihkan akhiran desimal (.0 atau .000) dan kembalikan nilai 'nan' menjadi kosong
+        df_init = df_init.astype(str).replace(r'\.0+$', '', regex=True)
+        df_init = df_init.replace(['nan', 'None', '<NA>'], '')
+        
         st.session_state[state_key] = df_init
         st.session_state['df_sm_working'] = df_init.copy()
         st.session_state['sm_deleted_dup_count'] = 0
