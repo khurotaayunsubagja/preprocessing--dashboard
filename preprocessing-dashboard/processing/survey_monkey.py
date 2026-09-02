@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import io
 
-def run_survey_monkey_flow(uploaded_file, selected_sheet):
+def run survey_monkey_flow(uploaded_file, selected_sheet):
     st.info("💡 Sistem akan memandu Anda melalui tahapan Pembersihan Data secara berurutan.")
 
     # ---------------------------------------------------------
