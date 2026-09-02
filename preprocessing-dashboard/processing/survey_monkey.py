@@ -2,28 +2,39 @@ import streamlit as st
 import pandas as pd
 import io
 
-def run_survey_monkey_flow(uploaded_file, selected_sheet, raw_column_choices):
+def run_survey_monkey_flow(uploaded_file, selected_sheet):
     st.info("💡 Sistem akan memandu Anda melalui tahapan Pembersihan Data secara berurutan.")
 
-# ---------------------------------------------------------
+    # ---------------------------------------------------------
     # INITIALIZATION: Load Data Awal & Riwayat Log ke Session State
     # ---------------------------------------------------------
-    # 🌟 KUNCI PERBAIKAN: Pastikan sm_metadata selalu diinisialisasi secara independen
     if 'sm_metadata' not in st.session_state:
         st.session_state['sm_metadata'] = {}
 
-    if 'df_sm_working' not in st.session_state or st.sidebar.button("🔄 Reset Data Mentah", key="reset_sm_data"):
-        st.session_state['df_sm_working'] = pd.read_excel(uploaded_file, sheet_name=selected_sheet, header=[0, 1])
+    state_key = f"sm_init_loaded_{selected_sheet}"
+    if state_key not in st.session_state or st.sidebar.button("🔄 Reset Data Mentah", key="reset_sm_data"):
+        # Header Multi-Index khusus Survey Monkey
+        df_init = pd.read_excel(uploaded_file, sheet_name=selected_sheet, header=[0, 1])
+        st.session_state[state_key] = df_init
+        st.session_state['df_sm_working'] = df_init.copy()
         st.session_state['sm_deleted_dup_count'] = 0
-        st.session_state['sm_metadata'] = {} # Reset metadata jika data mentah di-reset
-        if 'df_base_before_filter' in st.session_state:
-            del st.session_state['df_base_before_filter']
-        if 'processed_df' in st.session_state:
-            del st.session_state['processed_df']
-        if 'step1_cleared' in st.session_state:
-            del st.session_state['step1_cleared']
+        st.session_state['sm_metadata'] = {} 
+        if 'df_base_before_filter' in st.session_state: del st.session_state['df_base_before_filter']
+        if 'processed_df' in st.session_state: del st.session_state['processed_df']
+        if 'step1_cleared' in st.session_state: del st.session_state['step1_cleared']
 
+    df_init = st.session_state[state_key]
     df_current = st.session_state['df_sm_working']
+
+    # Ekstraksi Multi-Index Column khusus SM
+    raw_column_choices = []
+    for col in df_init.columns:
+        main_txt = str(col[0]).strip()
+        if not pd.isna(col[1]) and "Unnamed" not in str(col[1]):
+            sub_txt = f" - {str(col[1]).strip()}"
+        else:
+            sub_txt = ""
+        raw_column_choices.append(f"{main_txt}{sub_txt}")
 
     # =========================================================
     # TAHAP 1: PEMERIKSAAN & HAPUS DUPLIKASI
@@ -40,20 +51,30 @@ def run_survey_monkey_flow(uploaded_file, selected_sheet, raw_column_choices):
     idx_dup_target = raw_column_choices.index(col_dup_select)
     actual_dup_target_col = df_current.columns[idx_dup_target]
     
+    temp_col_str = df_current[actual_dup_target_col].astype(str).str.strip()
+    is_empty = temp_col_str.isin(['', 'nan', 'None', 'null', '<NA>'])
+    valid_mask = ~is_empty
+    
     dup_mask_init = df_current.duplicated(subset=[actual_dup_target_col], keep=False)
-    duplicate_values = df_current[dup_mask_init][actual_dup_target_col].unique()
+    duplicate_values = df_current[dup_mask_init & valid_mask][actual_dup_target_col].unique()
     
     df_only_duplicates = df_current[df_current[actual_dup_target_col].isin(duplicate_values)].copy()
     
     if (df_only_duplicates.empty) or (len(duplicate_values) == 0):
-        st.success("✅ Aman! Tidak ditemukan data duplikat pada kolom terpilih.")
+        st.success("✅ Aman! Tidak ditemukan data duplikat (dengan isian) pada kolom terpilih.")
     else:
         st.warning(f"⚠️ Terdeteksi data memiliki nilai duplikat pada kolom **{col_dup_select}**.")
         
         if st.button("⚡ Bersihkan Otomatis Semua Duplikat (Pertahankan Data Pertama)", type="primary", key="btn_auto_clean_dup"):
-            before_count = len(df_current)
-            df_cleaned = df_current.drop_duplicates(subset=[actual_dup_target_col], keep='first').reset_index(drop=True)
-            st.session_state['sm_deleted_dup_count'] += (before_count - len(df_cleaned))
+            df_empty = df_current[~valid_mask]
+            df_valid = df_current[valid_mask]
+            
+            before_count = len(df_valid)
+            df_valid_cleaned = df_valid.drop_duplicates(subset=[actual_dup_target_col], keep='first')
+            
+            df_cleaned = pd.concat([df_empty, df_valid_cleaned]).sort_index().reset_index(drop=True)
+            
+            st.session_state['sm_deleted_dup_count'] += (before_count - len(df_valid_cleaned))
             st.session_state['df_sm_working'] = df_cleaned
             st.rerun()
             
@@ -62,17 +83,17 @@ def run_survey_monkey_flow(uploaded_file, selected_sheet, raw_column_choices):
         df_preview_style = df_only_duplicates.copy()
         df_preview_style.columns = [f"{c[0]} - {c[1]}" if "Unnamed" not in str(c[1]) else str(c[0]) for c in df_preview_style.columns]
         flat_target_col = df_preview_style.columns[idx_dup_target]
+        
         df_preview_style = df_preview_style.sort_values(by=[flat_target_col])
 
-        def highlight_duplicate_groups(data):
+        def highlight_duplicate_groups(df_data):
             colors = ['#FFF2CC', '#D9EAD3', '#C9DAF8', '#F4CCCC', '#E1D5E7', '#FCE5CD', '#D5E8D4', '#E6F4EA']
-            unique_vals = data[flat_target_col].unique()
-            val_to_color = {val: colors[idx % len(colors)] for idx, val in enumerate(unique_vals)}
-            style_df = pd.DataFrame('', index=data.index, columns=data.columns)
-            for row_idx in data.index:
-                current_val = data.loc[row_idx, flat_target_col]
-                row_color = val_to_color.get(current_val, '')
-                style_df.loc[row_idx, :] = f'background-color: {row_color}; color: black;'
+            group_ids = df_data.groupby(flat_target_col, sort=False).ngroup().tolist()
+            style_df = pd.DataFrame('', index=df_data.index, columns=df_data.columns)
+            
+            for i in range(len(df_data)):
+                row_color = colors[group_ids[i] % len(colors)]
+                style_df.iloc[i] = f'background-color: {row_color}; color: black;'
             return style_df
 
         st.dataframe(df_preview_style.style.apply(highlight_duplicate_groups, axis=None), use_container_width=True)
@@ -102,7 +123,7 @@ def run_survey_monkey_flow(uploaded_file, selected_sheet, raw_column_choices):
     if st.session_state['sm_deleted_dup_count'] > 0:
         st.info(f"📊 **Log Pembersihan:** Sebanyak **{st.session_state['sm_deleted_dup_count']} baris** data duplikat telah dihapus.")
 
-    # Checkpoint untuk lanjut ke tahap berikutnya
+    # Checkpoint Tahap 1
     st.write("")
     if st.checkbox("✅ Lanjutkan ke Tahap 2: Filtering Data & Routing", key="chk_step1_clear"):
         st.session_state['step1_cleared'] = True
@@ -118,14 +139,12 @@ def run_survey_monkey_flow(uploaded_file, selected_sheet, raw_column_choices):
         st.write("### 🔍 2. Tahapan Filtering Data (Metadata & Base Routing)")
         st.info("💡 Atur penamaan analisis, tipe data, serta basis routing/penyaringan kolom di sini.")
 
-        # Pilih kolom yang mau dikonfigurasi metadata-nya
         target_meta_col = st.selectbox(
             "Pilih Kolom Pertanyaan untuk Dikonfigurasi:",
             raw_column_choices,
             key="sm_meta_col_select"
         )
         
-        # Ambil state metadata lama atau buat baru jika belum ada
         if target_meta_col not in st.session_state['sm_metadata']:
             st.session_state['sm_metadata'][target_meta_col] = {
                 "alias_name": target_meta_col,
@@ -136,9 +155,7 @@ def run_survey_monkey_flow(uploaded_file, selected_sheet, raw_column_choices):
             
         meta_data = st.session_state['sm_metadata'][target_meta_col]
 
-        # Form Input Spesifikasi Filtering Data
         col_m1, col_m2, col_m3 = st.columns(3)
-        
         with col_m1:
             new_alias = st.text_input("✍️ Nama Kolom Baru (Alias Analisis):", value=meta_data["alias_name"])
             st.session_state['sm_metadata'][target_meta_col]["alias_name"] = new_alias
@@ -154,7 +171,6 @@ def run_survey_monkey_flow(uploaded_file, selected_sheet, raw_column_choices):
         with col_m3:
             routing_options = ["-- Tanpa Routing (Total Data) --"] + [c for c in raw_column_choices if c != target_meta_col]
             
-            # Proteksi jika opsi indeks hilang/bergeser
             default_routing_idx = 0
             if meta_data["base_routing_col"] in routing_options:
                 default_routing_idx = routing_options.index(meta_data["base_routing_col"])
@@ -166,7 +182,6 @@ def run_survey_monkey_flow(uploaded_file, selected_sheet, raw_column_choices):
             )
             st.session_state['sm_metadata'][target_meta_col]["base_routing_col"] = new_routing_col
 
-        # Jika ada Base Routing yang aktif, pilih nilai kriteria filter peroutingannya
         if new_routing_col != "-- Tanpa Routing (Total Data) --":
             idx_route = raw_column_choices.index(new_routing_col)
             actual_route_col = df_current.columns[idx_route]
@@ -183,91 +198,86 @@ def run_survey_monkey_flow(uploaded_file, selected_sheet, raw_column_choices):
         else:
             st.session_state['sm_metadata'][target_meta_col]["routing_value"] = []
 
-        # Tampilkan ringkasan metadata yang telah disimpan
         with st.expander("📋 Lihat Seluruh Metadata & Ringkasan Routing Terdaftar"):
             st.json(st.session_state['sm_metadata'])
 
-        # =========================================================
-        # TAHAP 3: PERHITUNGAN AGREGASI DATA & EXPORT
-        # =========================================================
-        st.divider()
-        st.write("### 📈 3. Tahapan Analisis Distribusi Frekuensi & Ekspor Data")
-        
-        col_analysis_select = st.selectbox(
-            "Pilih Kolom Kuesioner untuk Dihitung Distribusinya:",
-            raw_column_choices,
-            key="sm_analysis_col"
-        )
-        
-        idx_analysis = raw_column_choices.index(col_analysis_select)
-        actual_analysis_col = df_current.columns[idx_analysis]
-        
-        # Ambil aturan metadata/routing untuk kolom yang sedang dianalisis
-        analysis_meta = st.session_state['sm_metadata'].get(col_analysis_select, {
-            "alias_name": col_analysis_select,
-            "data_type": "Single Choice",
-            "base_routing_col": "-- Tanpa Routing (Total Data) --",
-            "routing_value": []
-        })
-        
-        # --- APLIKASIKAN LOGIKA BASE ROUTING ---
-        if analysis_meta["base_routing_col"] != "-- Tanpa Routing (Total Data) --" and analysis_meta["routing_value"]:
-            idx_base = raw_column_choices.index(analysis_meta["base_routing_col"])
-            actual_base_col = df_current.columns[idx_base]
-            
-            # Saring data yang dijadikan denominator (Base Routing)
-            df_routed_base = df_current[df_current[actual_base_col].astype(str).isin(analysis_meta["routing_value"])]
-            total_denominator = len(df_routed_base)
-            routing_info_text = f"🛣️ *Menggunakan Base Routing dari kolom:* `{analysis_meta['base_routing_col']}` dengan nilai kriteria {analysis_meta['routing_value']} (Total Sample Base = {total_denominator} responden)."
+        # Checkpoint Tahap 2
+        st.write("")
+        if st.checkbox("✅ Lanjutkan ke Tahap 3: Analisis & Ekspor Data", key="chk_step2_clear"):
+            st.session_state['step2_cleared'] = True
         else:
-            df_routed_base = df_current
-            total_denominator = len(df_current)
-            routing_info_text = f"🌍 *Tanpa Routing:* Menggunakan total populasi data bersih ({total_denominator} responden)."
-            
-        st.caption(routing_info_text)
+            st.session_state['step2_cleared'] = False
 
-        # Hitung Nilai Absolut
-        freq_abs = df_routed_base[actual_analysis_col].value_counts(dropna=False)
-        
-        # KUNCI PERBAIKAN: Perhitungan persentase dibagi berdasarkan total_denominator dari Base Routing
-        freq_pct = (freq_abs / total_denominator) * 100 if total_denominator > 0 else freq_abs * 0
-        
-        df_summary = pd.DataFrame({
-            'Jumlah Absolut (Count)': freq_abs,
-            'Persentase (%)': freq_pct
-        })
-        df_summary.index.name = "Kategori Jawaban"
-        df_summary = df_summary.reset_index()
-        
-        # Tampilkan info Tipe Data & Nama Alias di atas tabel hasil
-        st.markdown(f"**Nama Analisis (Alias):** `{analysis_meta['alias_name']}` | **Tipe Data:** `{analysis_meta['data_type']}`")
-        st.write(f"#### 📊 Tabel Distribusi Frekuensi")
-        st.dataframe(df_summary.style.format({'Persentase (%)': '{:.2f}%'}), use_container_width=True)
-        
-        # --- PROSES EXPORT DATA KE EXCEL MULTI-SHEET ---
-        st.write("#### 💾 Ekspor Hasil Analisis")
-        
-        buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-            # Sheet 1: Data Bersih
-            df_export_clean = df_current.copy()
-            df_export_clean.columns = [f"{c[0]} - {c[1]}" if not pd.isna(c[1]) and "Unnamed" not in str(c[1]) else str(c[0]) for c in df_export_clean.columns]
-            df_export_clean.to_excel(writer, sheet_name="Data_Bersih_Final", index=False)
+        if st.session_state.get('step2_cleared', False):
+
+            # =========================================================
+            # TAHAP 3: PERHITUNGAN AGREGASI DATA & EXPORT
+            # =========================================================
+            st.divider()
+            st.write("### 📈 3. Tahapan Analisis Distribusi Frekuensi & Ekspor Data")
             
-            # Sheet 2: Ringkasan Distribusi Terkini
-            df_summary.to_excel(writer, sheet_name="Ringkasan_Distribusi", index=False)
+            col_analysis_select = st.selectbox(
+                "Pilih Kolom Kuesioner untuk Dihitung Distribusinya:",
+                raw_column_choices,
+                key="sm_analysis_col"
+            )
             
-            # Sheet 3: Kamus Metadata & Routing Rule
-            df_meta_export = pd.DataFrame(st.session_state['sm_metadata']).T
-            df_meta_export.index.name = "Kolom Asli"
-            df_meta_export.reset_index().to_excel(writer, sheet_name="Metadata_Routing_Rules", index=False)
+            idx_analysis = raw_column_choices.index(col_analysis_select)
+            actual_analysis_col = df_current.columns[idx_analysis]
             
-        buffer.seek(0)
-        
-        st.download_button(
-            label="📥 Download Hasil Pembersihan & Analisis (.xlsx)",
-            data=buffer,
-            file_name="Hasil_Analisis_SurveyMonkey_Routed.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            type="primary"
-        )
+            analysis_meta = st.session_state['sm_metadata'].get(col_analysis_select, {
+                "alias_name": col_analysis_select,
+                "data_type": "Single Choice",
+                "base_routing_col": "-- Tanpa Routing (Total Data) --",
+                "routing_value": []
+            })
+            
+            if analysis_meta["base_routing_col"] != "-- Tanpa Routing (Total Data) --" and analysis_meta["routing_value"]:
+                idx_base = raw_column_choices.index(analysis_meta["base_routing_col"])
+                actual_base_col = df_current.columns[idx_base]
+                
+                df_routed_base = df_current[df_current[actual_base_col].astype(str).isin(analysis_meta["routing_value"])]
+                total_denominator = len(df_routed_base)
+                routing_info_text = f"🛣️ *Menggunakan Base Routing dari kolom:* `{analysis_meta['base_routing_col']}` dengan nilai kriteria {analysis_meta['routing_value']} (Total Sample Base = {total_denominator} responden)."
+            else:
+                df_routed_base = df_current
+                total_denominator = len(df_current)
+                routing_info_text = f"🌍 *Tanpa Routing:* Menggunakan total populasi data bersih ({total_denominator} responden)."
+                
+            st.caption(routing_info_text)
+
+            freq_abs = df_routed_base[actual_analysis_col].value_counts(dropna=False)
+            freq_pct = (freq_abs / total_denominator) * 100 if total_denominator > 0 else freq_abs * 0
+            
+            df_summary = pd.DataFrame({
+                'Jumlah Absolut (Count)': freq_abs,
+                'Persentase (%)': freq_pct
+            })
+            df_summary.index.name = "Kategori Jawaban"
+            df_summary = df_summary.reset_index()
+            
+            st.markdown(f"**Nama Analisis (Alias):** `{analysis_meta['alias_name']}` | **Tipe Data:** `{analysis_meta['data_type']}`")
+            st.write(f"#### 📊 Tabel Distribusi Frekuensi")
+            st.dataframe(df_summary.style.format({'Persentase (%)': '{:.2f}%'}), use_container_width=True)
+            
+            st.write("#### 💾 Ekspor Hasil Analisis")
+            buffer = io.BytesIO()
+            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                df_export_clean = df_current.copy()
+                df_export_clean.columns = [f"{c[0]} - {c[1]}" if not pd.isna(c[1]) and "Unnamed" not in str(c[1]) else str(c[0]) for c in df_export_clean.columns]
+                df_export_clean.to_excel(writer, sheet_name="Data_Bersih_Final", index=False)
+                
+                df_summary.to_excel(writer, sheet_name="Ringkasan_Distribusi", index=False)
+                
+                df_meta_export = pd.DataFrame(st.session_state['sm_metadata']).T
+                df_meta_export.index.name = "Kolom Asli"
+                df_meta_export.reset_index().to_excel(writer, sheet_name="Metadata_Routing_Rules", index=False)
+                
+            buffer.seek(0)
+            st.download_button(
+                label="📥 Download Hasil Pembersihan & Analisis (.xlsx)",
+                data=buffer,
+                file_name="Hasil_Analisis_SurveyMonkey_Routed.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                type="primary"
+            )
