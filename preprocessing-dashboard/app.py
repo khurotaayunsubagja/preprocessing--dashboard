@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import numpy as np  # <-- Ditambahkan untuk mengatasi error styling warna
+import numpy as np
 import os
 import sys
 
@@ -14,7 +14,6 @@ st.set_page_config(
 
 # Import modul flow kuesioner Anda
 from processing.survey_monkey import run_survey_monkey_flow
-# KODE IMPORT INI YANG SEBELUMNYA HILANG:
 from processing.google_forms import (
     google_forms_processor, 
     calculate_column_metrics, 
@@ -152,29 +151,32 @@ if uploaded_file is not None:
                     df_all_dups = df_working[all_dups_mask & valid_mask]
                         
                     # Urutkan berdasarkan Index
-                    df_all_dups = df_all_dups.sort_index()
+                    df_all_dups = df_all_dups.sort_values(by=duplicate_keys)
                     
-                    # LOGIKA BARU: Styling warna menggunakan NumPy Array murni (Bebas Error Loop)
-                    def highlight_groups(df):
-                        colors = np.array([
-                            'background-color: rgba(255, 99, 132, 0.25)',  # Merah
-                            'background-color: rgba(54, 162, 235, 0.25)',  # Biru
-                            'background-color: rgba(255, 206, 86, 0.25)',  # Kuning
-                            'background-color: rgba(75, 192, 192, 0.25)',  # Hijau
-                            'background-color: rgba(153, 102, 255, 0.25)', # Ungu
-                            'background-color: rgba(255, 159, 64, 0.25)'   # Oranye
-                        ])
+                    # LOGIKA BARU: Styling warna menggunakan List Python Murni (Sangat Aman & Stabil)
+                    def highlight_groups(df_data):
+                        # Palet warna pastel (Format List biasa)
+                        colors = [
+                            'background-color: rgba(255, 243, 205, 0.8)',  # Kuning Pastel
+                            'background-color: rgba(212, 237, 218, 0.8)',  # Hijau Pastel
+                            'background-color: rgba(204, 229, 255, 0.8)',  # Biru Pastel
+                            'background-color: rgba(248, 215, 218, 0.8)',  # Merah Pastel
+                            'background-color: rgba(226, 227, 229, 0.8)'   # Abu-abu Pastel
+                        ]
                         
-                        # Hitung ID grup menggunakan .values untuk menghindari error index berantakan
-                        group_ids = df.groupby(duplicate_keys).ngroup().values
+                        # Dapatkan ID grup, lalu ubah langsung menjadi list angka biasa (menghindari error array Numpy)
+                        group_ids = df_data.groupby(duplicate_keys, sort=False).ngroup().tolist()
                         
-                        # Map array warna secara otomatis per baris
-                        row_colors = colors[group_ids % len(colors)]
+                        # Siapkan kerangka dataframe kosong untuk menampung format warna
+                        style_df = pd.DataFrame('', index=df_data.index, columns=df_data.columns)
                         
-                        # Bentuk menjadi matriks 2D sesuai jumlah kolom dan baris DataFrame
-                        style_matrix = np.tile(row_colors, (len(df.columns), 1)).T
-                        
-                        return pd.DataFrame(style_matrix, index=df.index, columns=df.columns)
+                        # Warnai baris demi baris menggunakan posisi murni (.iloc)
+                        # Cara ini tidak akan pernah error meskipun ada nomor baris yang kembar
+                        for i in range(len(df_data)):
+                            row_color = colors[group_ids[i] % len(colors)]
+                            style_df.iloc[i] = row_color
+                            
+                        return style_df
 
                     # Aplikasikan style warna lalu tampilkan
                     styled_df = df_all_dups.style.apply(highlight_groups, axis=None)
